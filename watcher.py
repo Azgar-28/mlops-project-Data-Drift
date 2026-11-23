@@ -79,6 +79,7 @@ class CSVHandler(FileSystemEventHandler):
 
         # Ignore duplicate events for the same filename.
         with processing_lock:
+            processed_files.update(load_processed_files())
             if (
                 file_key in processing_files
                 or file_key in processed_files

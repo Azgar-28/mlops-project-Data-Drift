@@ -102,7 +102,7 @@ Services:
 
 The Render service starts the dashboard and CSV watcher together. MLflow tracking uses a SQLite database on the persistent disk without starting an additional MLflow web server, reducing memory use. Only the Streamlit dashboard is exposed publicly. The Blueprint uses a paid Starter service because Render persistent disks are not available on free web services.
 
-For incoming CSVs on Render, use the dashboard's **Import CSV** page to upload a file. The hosted service cannot monitor a folder on your personal computer.
+For incoming CSVs on Render, use the dashboard's **Import CSV** page, select a CSV, then click **Save and Run Drift Check**. This stages the data and immediately runs drift detection; retraining starts if drift is detected. The hosted service cannot monitor a folder on your personal computer. The separate **Use Latest CSV as Incoming Data** action also runs the workflow.
 
 The Render deployment is configured by `render.yaml` and `render_start.py`.
 

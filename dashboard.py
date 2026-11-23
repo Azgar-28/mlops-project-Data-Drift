@@ -30,6 +30,7 @@ from config import (
     MODEL_MANIFEST,
     MODEL_PATH,
     NEW_DATA,
+    PROCESSED_FILES,
     TRAINING_DATA,
     WATCHER_STATUS,
 )
@@ -469,6 +470,40 @@ def get_latest_uploaded_file():
     return max(files, key=os.path.getmtime)
 
 
+def mark_upload_for_direct_processing(file_path):
+    """Prevent the watcher duplicating work started by the dashboard."""
+    file_key = os.path.abspath(file_path)
+    processed = set()
+
+    if os.path.isfile(PROCESSED_FILES):
+        try:
+            with open(PROCESSED_FILES, "r", encoding="utf-8") as file:
+                values = json.load(file)
+            if isinstance(values, list):
+                processed.update(values)
+        except json.JSONDecodeError:
+            add_log("Watcher processed-file registry is invalid.", "WARNING")
+        except OSError as exc:
+            add_log(f"Could not read watcher registry: {exc}", "WARNING")
+
+    processed.add(file_key)
+    temporary_path = PROCESSED_FILES.with_suffix(".tmp")
+    try:
+        with open(temporary_path, "w", encoding="utf-8") as file:
+            json.dump(sorted(processed), file, indent=2)
+        temporary_path.replace(PROCESSED_FILES)
+    except OSError as exc:
+        add_log(f"Could not update watcher registry: {exc}", "WARNING")
+
+
+def set_watcher_status(message):
+    try:
+        with open(STATUS_FILE, "w", encoding="utf-8") as file:
+            file.write(message)
+    except OSError as exc:
+        add_log(f"Could not update workflow status: {exc}", "WARNING")
+
+
 def show_metric_card(title, value, icon, description):
     safe_title = html.escape(str(title))
     safe_value = html.escape(str(value))
@@ -553,7 +588,7 @@ def run_script(script_path, task_name):
 
             st.error(message)
             add_log(message, "ERROR")
-            return
+            return False
 
         add_log(f"Started: {task_name}")
 
@@ -625,12 +660,15 @@ def run_script(script_path, task_name):
 
                 st.code(output_text, language="text")
 
+            return result.returncode == 0
+
         except subprocess.TimeoutExpired:
 
             message = f"{task_name} timed out after 600 seconds."
 
             st.error(message)
             add_log(message, "ERROR")
+            return False
 
         except Exception as exc:
 
@@ -638,6 +676,7 @@ def run_script(script_path, task_name):
 
             st.error(message)
             add_log(message, "ERROR")
+            return False
 
 
 # =========================================================
@@ -1072,7 +1111,7 @@ elif page == "Import CSV":
                 )
 
                 if st.button(
-                    "💾 Save Uploaded CSV",
+                    "💾 Save and Run Drift Check",
                     type="primary",
                     use_container_width=True
                 ):
@@ -1083,18 +1122,37 @@ elif page == "Import CSV":
                         INCOMING_DIR,
                         safe_name
                     )
+                    temporary_upload = save_path + ".uploading"
 
                     uploaded_file.seek(0)
 
-                    with open(save_path, "wb") as file:
+                    with open(temporary_upload, "wb") as file:
                         file.write(uploaded_file.getbuffer())
 
+                    mark_upload_for_direct_processing(save_path)
+                    os.replace(temporary_upload, save_path)
+                    preview_df.to_csv(NEW_DATA, index=False)
+
                     add_log(
-                        f"CSV saved to incoming_data/{safe_name}",
+                        f"CSV saved and staged for drift detection: {safe_name}",
                         "SUCCESS"
                     )
 
-                    st.success(f"CSV saved: {safe_name}")
+                    st.success(
+                        f"{safe_name} saved. Starting drift detection and "
+                        "automatic retraining if drift is detected."
+                    )
+                    workflow_succeeded = run_script(
+                        RETRAIN_SCRIPT,
+                        "Automatic Drift Detection and Retraining"
+                    )
+                    set_watcher_status(
+                        "SUCCESS: Uploaded CSV analyzed. "
+                        "See dashboard output for the drift result."
+                        if workflow_succeeded
+                        else "ERROR: Automatic drift workflow failed. "
+                        "See dashboard output."
+                    )
 
             except Exception as exc:
 
@@ -1150,7 +1208,19 @@ elif page == "Import CSV":
                     )
 
                     st.success(
-                        "Incoming dataset updated successfully."
+                        "Incoming dataset updated. Starting drift detection "
+                        "and automatic retraining if drift is detected."
+                    )
+                    workflow_succeeded = run_script(
+                        RETRAIN_SCRIPT,
+                        "Automatic Drift Detection and Retraining"
+                    )
+                    set_watcher_status(
+                        "SUCCESS: Incoming dataset analyzed. "
+                        "See dashboard output for the drift result."
+                        if workflow_succeeded
+                        else "ERROR: Automatic drift workflow failed. "
+                        "See dashboard output."
                     )
 
                 except Exception as exc:
