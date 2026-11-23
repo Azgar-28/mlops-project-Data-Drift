@@ -1059,7 +1059,8 @@ elif page == "Import CSV":
         st.markdown("## 📂 Upload CSV File")
 
         st.caption(
-            "Choose a CSV file to preview it before saving."
+            "Choose a CSV file to preview it. It is saved automatically "
+            "and drift detection starts as soon as the upload completes."
         )
 
         uploaded_file = st.file_uploader(
@@ -1110,49 +1111,50 @@ elif page == "Import CSV":
                     use_container_width=True
                 )
 
-                if st.button(
-                    "💾 Save and Run Drift Check",
-                    type="primary",
-                    use_container_width=True
-                ):
+                upload_token = (
+                    f"{uploaded_file.file_id}:{uploaded_file.name}"
+                )
 
-                    safe_name = os.path.basename(uploaded_file.name)
+                if st.session_state.get("last_auto_upload") != upload_token:
+                    st.session_state.last_auto_upload = upload_token
 
-                    save_path = os.path.join(
-                        INCOMING_DIR,
-                        safe_name
-                    )
-                    temporary_upload = save_path + ".uploading"
+                    try:
+                        safe_name = os.path.basename(uploaded_file.name)
+                        save_path = os.path.join(INCOMING_DIR, safe_name)
+                        temporary_upload = save_path + ".uploading"
 
-                    uploaded_file.seek(0)
+                        uploaded_file.seek(0)
+                        with open(temporary_upload, "wb") as file:
+                            file.write(uploaded_file.getbuffer())
 
-                    with open(temporary_upload, "wb") as file:
-                        file.write(uploaded_file.getbuffer())
+                        mark_upload_for_direct_processing(save_path)
+                        os.replace(temporary_upload, save_path)
+                        preview_df.to_csv(NEW_DATA, index=False)
 
-                    mark_upload_for_direct_processing(save_path)
-                    os.replace(temporary_upload, save_path)
-                    preview_df.to_csv(NEW_DATA, index=False)
+                        add_log(
+                            f"CSV saved and staged for drift detection: {safe_name}",
+                            "SUCCESS"
+                        )
 
-                    add_log(
-                        f"CSV saved and staged for drift detection: {safe_name}",
-                        "SUCCESS"
-                    )
+                        st.success(
+                            f"{safe_name} was saved. Drift detection and "
+                            "automatic retraining (if drift is found) are starting."
+                        )
 
-                    st.success(
-                        f"{safe_name} saved. Starting drift detection and "
-                        "automatic retraining if drift is detected."
-                    )
-                    workflow_succeeded = run_script(
-                        RETRAIN_SCRIPT,
-                        "Automatic Drift Detection and Retraining"
-                    )
-                    set_watcher_status(
-                        "SUCCESS: Uploaded CSV analyzed. "
-                        "See dashboard output for the drift result."
-                        if workflow_succeeded
-                        else "ERROR: Automatic drift workflow failed. "
-                        "See dashboard output."
-                    )
+                        workflow_succeeded = run_script(
+                            RETRAIN_SCRIPT,
+                            "Automatic Drift Detection and Retraining"
+                        )
+                        set_watcher_status(
+                            "SUCCESS: Uploaded CSV analyzed. "
+                            "See dashboard output for the drift result."
+                            if workflow_succeeded
+                            else "ERROR: Automatic drift workflow failed. "
+                            "See dashboard output."
+                        )
+                    except OSError as exc:
+                        st.error(f"Could not save uploaded CSV: {exc}")
+                        add_log(f"CSV save failed: {exc}", "ERROR")
 
             except Exception as exc:
 
