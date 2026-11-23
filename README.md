@@ -100,7 +100,7 @@ Services:
 3. Review the `mlops-drift-monitor` web service and create it.
 4. After the first deploy, open the service URL. Render's persistent disk stores datasets, models, reports, and MLflow data across restarts.
 
-The Render service starts the dashboard, CSV watcher, and MLflow tracking server together so they share the persistent disk. Only the Streamlit dashboard is exposed publicly; MLflow tracking remains internal to the service. The Blueprint uses a paid Starter service because Render persistent disks are not available on free web services.
+The Render service starts the dashboard and CSV watcher together. MLflow tracking uses a SQLite database on the persistent disk without starting an additional MLflow web server, reducing memory use. Only the Streamlit dashboard is exposed publicly. The Blueprint uses a paid Starter service because Render persistent disks are not available on free web services.
 
 For incoming CSVs on Render, use the dashboard's **Import CSV** page to upload a file. The hosted service cannot monitor a folder on your personal computer.
 

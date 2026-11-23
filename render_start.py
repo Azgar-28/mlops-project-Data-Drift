@@ -1,16 +1,14 @@
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from config import (
     DATA_DIR,
-    MLFLOW_DB,
-    MODEL_PATH,
+    NEW_DATA,
     STORAGE_DIR,
     TRAINING_DATA,
 )
@@ -34,23 +32,6 @@ def stop_processes(*_):
     raise SystemExit(0)
 
 
-def wait_for_mlflow(process):
-    deadline = time.monotonic() + 90
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RuntimeError("MLflow exited before becoming healthy.")
-        try:
-            with urllib.request.urlopen(
-                "http://127.0.0.1:5000/health", timeout=2
-            ) as response:
-                if response.status == 200:
-                    return
-        except (OSError, urllib.error.URLError):
-            time.sleep(1)
-
-    raise TimeoutError("MLflow did not become healthy within 90 seconds.")
-
-
 def start_process(command):
     process = subprocess.Popen(command, cwd=PROJECT_DIR)
     processes.append(process)
@@ -64,39 +45,18 @@ def main():
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not TRAINING_DATA.exists():
-        subprocess.run(
-            [sys.executable, str(PROJECT_DIR / "src" / "data_preprocessing.py")],
-            cwd=PROJECT_DIR,
-            check=True,
-        )
+    baked_data = PROJECT_DIR / "data"
+    for source, destination in (
+        (baked_data / "training_data.csv", TRAINING_DATA),
+        (baked_data / "new_data.csv", NEW_DATA),
+    ):
+        if not destination.exists() and source.exists():
+            shutil.copy2(source, destination)
 
-    mlflow_uri = f"sqlite:///{MLFLOW_DB.as_posix()}"
-    mlflow_process = start_process([
-        sys.executable,
-        "-m",
-        "mlflow",
-        "server",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "5000",
-        "--backend-store-uri",
-        mlflow_uri,
-        "--default-artifact-root",
-        str(STORAGE_DIR / "mlruns"),
-    ])
-    wait_for_mlflow(mlflow_process)
-    os.environ["MLFLOW_TRACKING_URI"] = "http://127.0.0.1:5000"
+    os.environ["MLFLOW_TRACKING_URI"] = (
+        f"sqlite:///{(STORAGE_DIR / 'mlflow.db').as_posix()}"
+    )
 
-    if not MODEL_PATH.exists():
-        subprocess.run(
-            [sys.executable, str(PROJECT_DIR / "src" / "train_model.py")],
-            cwd=PROJECT_DIR,
-            check=True,
-        )
-
-    start_process([sys.executable, str(PROJECT_DIR / "watcher.py")])
     start_process([
         sys.executable,
         "-m",
@@ -106,8 +66,10 @@ def main():
         "--server.address=0.0.0.0",
         f"--server.port={os.environ.get('PORT', '10000')}",
         "--server.headless=true",
+        "--server.maxUploadSize=50",
         "--browser.gatherUsageStats=false",
     ])
+    start_process([sys.executable, str(PROJECT_DIR / "watcher.py")])
 
     while True:
         for process in processes:
