@@ -1,0 +1,28 @@
+services:
+  mlflow:
+    build: .
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:////app/mlflow.db --default-artifact-root /app/mlruns
+    ports:
+      - "5001:5000"
+    volumes:
+      - .:/app
+
+  dashboard:
+    build: .
+    command: streamlit run dashboard.py --server.address=0.0.0.0 --server.port=8501
+    ports:
+      - "8502:8501"
+    volumes:
+      - .:/app
+      - ./incoming_data:/app/incoming_data
+    depends_on:
+      - mlflow
+
+  watcher:
+    build: .
+    command: python watcher.py
+    volumes:
+      - .:/app
+      - ./incoming_data:/app/incoming_data
+    depends_on:
+      - mlflow

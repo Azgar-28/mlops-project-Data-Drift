@@ -1,0 +1,12 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+mlruns
+mlflow.db
+incoming_data
+processed_files.json
+watcher_status.txt
+models/*.pkl
+data/drift_report.html

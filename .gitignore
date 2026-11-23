@@ -1,0 +1,31 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# MLflow
+mlflow.db
+mlruns/
+
+# Generated files
+data/drift_report.html
+models/model.pkl
+models/model_candidate.pkl
+models/model_backup.pkl
+models/model_manifest.json
+dvc_storage/
+
+# PyCharm
+.idea/
+
+# Logs
+*.log
+
+# Incoming test data
+incoming_data/
+
+# Temporary watcher status
+watcher_status.txt
+processed_files.json

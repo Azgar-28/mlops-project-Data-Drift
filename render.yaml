@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: mlops-drift-monitor
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python render_start.py
+    healthCheckPath: /_stcore/health
+    autoDeploy: true
+    disk:
+      name: mlops-persistent-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: MLOPS_STORAGE_DIR
+        value: /var/data
+      - key: PYTHONUNBUFFERED
+        value: "1"
