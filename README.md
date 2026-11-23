@@ -104,6 +104,8 @@ The Render service starts the dashboard and CSV watcher together. MLflow trackin
 
 For incoming CSVs on Render, use the dashboard's **Import CSV** page and select a CSV. After the upload completes, the dashboard saves it automatically, stages it as incoming data, and runs drift detection; retraining starts if drift is detected. The hosted service cannot monitor a folder on your personal computer. The separate **Use Latest CSV as Incoming Data** action also runs the workflow.
 
+Incoming CSV feature names do not need to match the reference headers. Matching names are paired first; remaining numeric or categorical features are paired in column order with the same data type. Unmatched extra columns are ignored. Positional matching assumes the corresponding features appear in the same order and represent comparable measurements.
+
 The Render deployment is configured by `render.yaml` and `render_start.py`.
 
 ### Model approval controls

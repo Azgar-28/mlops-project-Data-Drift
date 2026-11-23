@@ -1060,7 +1060,8 @@ elif page == "Import CSV":
 
         st.caption(
             "Choose a CSV file to preview it. It is saved automatically "
-            "and drift detection starts as soon as the upload completes."
+            "and drift detection starts as soon as the upload completes. "
+            "Feature headers may differ; compatible columns are paired by type and order."
         )
 
         uploaded_file = st.file_uploader(

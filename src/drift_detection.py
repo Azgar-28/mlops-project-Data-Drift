@@ -13,6 +13,65 @@ if PROJECT_DIR not in sys.path:
 from config import DRIFT_REPORT, NEW_DATA, TRAINING_DATA
 
 
+def _feature_kind(series):
+    if pd.api.types.is_numeric_dtype(series):
+        return "numeric"
+    if (
+        pd.api.types.is_object_dtype(series)
+        or pd.api.types.is_string_dtype(series)
+        or isinstance(series.dtype, pd.CategoricalDtype)
+        or pd.api.types.is_bool_dtype(series)
+    ):
+        return "categorical"
+    return "unsupported"
+
+
+def match_feature_columns(reference_features, incoming_features):
+    """Match exact feature names first, then compatible columns by order."""
+    incoming_features = incoming_features.drop(columns=["target"], errors="ignore")
+    reference_columns = list(reference_features.columns)
+    incoming_columns = list(incoming_features.columns)
+    pairs = []
+
+    for reference_column in reference_columns:
+        if reference_column not in incoming_columns:
+            continue
+        reference_kind = _feature_kind(reference_features[reference_column])
+        incoming_kind = _feature_kind(incoming_features[reference_column])
+        if reference_kind == incoming_kind and reference_kind != "unsupported":
+            pairs.append((reference_column, reference_column))
+
+    used_reference = {reference for reference, _ in pairs}
+    used_incoming = {incoming for _, incoming in pairs}
+
+    unmatched_reference = [
+        column for column in reference_columns
+        if column not in used_reference
+        and _feature_kind(reference_features[column]) != "unsupported"
+    ]
+    unmatched_incoming = [
+        column for column in incoming_columns
+        if column not in used_incoming
+        and _feature_kind(incoming_features[column]) != "unsupported"
+    ]
+
+    for reference_column in unmatched_reference:
+        reference_kind = _feature_kind(reference_features[reference_column])
+        match_index = next(
+            (
+                index for index, incoming_column in enumerate(unmatched_incoming)
+                if _feature_kind(incoming_features[incoming_column]) == reference_kind
+            ),
+            None,
+        )
+        if match_index is None:
+            continue
+        incoming_column = unmatched_incoming.pop(match_index)
+        pairs.append((reference_column, incoming_column))
+
+    return pairs
+
+
 def detect_drift():
     training_path = TRAINING_DATA
     new_data_path = NEW_DATA
@@ -59,23 +118,21 @@ def detect_drift():
         errors="ignore"
     )
 
-    # Find matching columns in reference-column order
-    common_columns = [
-        col for col in reference_features.columns
-        if col in new_data.columns
-    ]
+    feature_pairs = match_feature_columns(reference_features, new_data)
+    if not feature_pairs:
+        raise ValueError(
+            "No compatible feature columns found. Upload at least one "
+            "numeric or categorical feature with usable values."
+        )
 
-    # Stop if no matching columns exist
-    if not common_columns:
-        print("\nWARNING: No matching feature columns found.")
-        print("Drift detection cannot be performed.")
-        print("Please upload a CSV with compatible feature names.")
+    reference_columns = [reference for reference, _ in feature_pairs]
+    incoming_columns = [incoming for _, incoming in feature_pairs]
+    feature_names = [f"feature_{index + 1}" for index in range(len(feature_pairs))]
 
-        return None
-
-    # Select matching columns
-    reference_features = reference_features[common_columns].copy()
-    incoming_features = new_data[common_columns].copy()
+    reference_features = reference_features[reference_columns].copy()
+    incoming_features = new_data[incoming_columns].copy()
+    reference_features.columns = feature_names
+    incoming_features.columns = feature_names
 
     print("\n================================")
     print("       DATASET INFORMATION")
@@ -83,55 +140,27 @@ def detect_drift():
 
     print("Reference rows:", len(reference_features))
     print("Incoming rows:", len(incoming_features))
-    print("Features compared:", len(common_columns))
+    print("Features compared:", len(feature_pairs))
 
     ignored_columns = [
         col for col in new_data.columns
-        if col not in common_columns
+        if col not in incoming_columns and col != "target"
     ]
 
     print("Ignored incoming columns:", ignored_columns)
 
-    # Check incompatible data types
-    incompatible_columns = []
-
-    for col in common_columns:
-
-        reference_type = pd.api.types.infer_dtype(
-            reference_features[col].dropna(),
-            skipna=True
-        )
-
-        incoming_type = pd.api.types.infer_dtype(
-            incoming_features[col].dropna(),
-            skipna=True
-        )
-
-        if (
-            reference_type != "empty"
-            and incoming_type != "empty"
-            and reference_type != incoming_type
-        ):
-            incompatible_columns.append(
-                (col, reference_type, incoming_type)
-            )
-
-    if incompatible_columns:
-
-        details = "; ".join(
-            f"{col}: reference={ref_type}, incoming={new_type}"
-            for col, ref_type, new_type in incompatible_columns
-        )
-
-        raise ValueError(
-            "Matching columns have incompatible data types. "
-            "Preprocess these columns before drift detection: "
-            + details
+    print("\nFeature mapping used (reference -> uploaded):")
+    for reference_column, incoming_column in feature_pairs:
+        print(f"- {reference_column} -> {incoming_column}")
+    if any(reference != incoming for reference, incoming in feature_pairs):
+        print(
+            "NOTE: Unmatched headers were paired by feature order and "
+            "compatible data type."
         )
 
     # Check columns with no usable values
     unusable_columns = [
-        col for col in common_columns
+        col for col in feature_names
         if (
             reference_features[col].notna().sum() == 0
             or incoming_features[col].notna().sum() == 0
@@ -146,7 +175,7 @@ def detect_drift():
 
     print("\nFeatures used for drift detection:")
 
-    for col in common_columns:
+    for col in feature_names:
         print("-", col)
 
     # Generate Evidently drift report
@@ -164,7 +193,7 @@ def detect_drift():
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Save HTML report
-    result.save_html(report_path)
+    result.save_html(str(report_path))
 
     # Extract drift information
     result_dict = result.dict()
