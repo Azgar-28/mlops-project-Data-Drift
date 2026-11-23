@@ -7,6 +7,7 @@ import subprocess
 import streamlit as st
 import pandas as pd
 import numpy as np
+import streamlit.components.v1 as components
 from datetime import datetime
 
 
@@ -349,6 +350,43 @@ def load_csv_for_dashboard(path):
 
 def file_status(path):
     return os.path.isfile(path)
+
+
+def show_latest_drift_report(title="## 📊 Latest Drift Report"):
+    with st.container(border=True):
+        st.markdown(title)
+
+        if not file_status(DRIFT_REPORT):
+            st.info("Run drift detection to generate the report.")
+            return
+
+        try:
+            with open(DRIFT_REPORT, "rb") as file:
+                report_html = file.read()
+
+            modified = datetime.fromtimestamp(
+                os.path.getmtime(DRIFT_REPORT)
+            )
+
+            st.success("Latest drift report is available.")
+            st.caption(
+                "Generated: " + modified.strftime("%Y-%m-%d %H:%M:%S")
+            )
+            st.download_button(
+                "📥 Download Drift Report",
+                data=report_html,
+                file_name="drift_report.html",
+                mime="text/html",
+                use_container_width=True
+            )
+            st.markdown("### Report Preview")
+            components.html(
+                report_html.decode("utf-8"),
+                height=750,
+                scrolling=True
+            )
+        except (OSError, UnicodeDecodeError) as exc:
+            st.error(f"Could not display the latest drift report: {exc}")
 
 
 def get_numeric_feature_columns(reference_df, incoming_df):
@@ -1043,6 +1081,7 @@ if page == "Overview":
 
             st.caption("Script: src/retrain.py")
 
+    show_latest_drift_report()
     show_logs()
 
 
@@ -1165,6 +1204,8 @@ elif page == "Import CSV":
                     f"CSV import failed: {exc}",
                     "ERROR"
                 )
+
+    show_latest_drift_report()
 
     # Latest uploaded dataset
 
@@ -1346,40 +1387,7 @@ elif page == "Drift Detection":
                 "Data Drift Detection"
             )
 
-    # Latest report
-
-    with st.container(border=True):
-
-        st.markdown("## 📊 Latest Drift Report")
-
-        if file_status(DRIFT_REPORT):
-
-            modified = datetime.fromtimestamp(
-                os.path.getmtime(DRIFT_REPORT)
-            )
-
-            st.success("Drift report is available.")
-
-            st.write(
-                "Last modified:",
-                modified.strftime("%Y-%m-%d %H:%M:%S")
-            )
-
-            with open(DRIFT_REPORT, "rb") as file:
-
-                st.download_button(
-                    "📥 Download Drift Report",
-                    data=file.read(),
-                    file_name="drift_report.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-
-        else:
-
-            st.info(
-                "Run drift detection to generate the report."
-            )
+    show_latest_drift_report()
 
     show_logs()
 
@@ -1499,40 +1507,8 @@ elif page == "Reports & Logs":
 
     c1, c2 = st.columns(2)
 
-    # Drift report
-
     with c1:
-
-        with st.container(border=True):
-
-            st.markdown("## 📈 Drift Report")
-
-            if file_status(DRIFT_REPORT):
-
-                modified = datetime.fromtimestamp(
-                    os.path.getmtime(DRIFT_REPORT)
-                )
-
-                st.success("Report available.")
-
-                st.caption(
-                    "Last modified: "
-                    + modified.strftime("%Y-%m-%d %H:%M:%S")
-                )
-
-                with open(DRIFT_REPORT, "rb") as file:
-
-                    st.download_button(
-                        "📥 Download HTML Report",
-                        data=file.read(),
-                        file_name="drift_report.html",
-                        mime="text/html",
-                        use_container_width=True
-                    )
-
-            else:
-
-                st.warning("No report generated yet.")
+        show_latest_drift_report("## 📈 Drift Report")
 
     # Watcher status
 
